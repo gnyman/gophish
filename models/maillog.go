@@ -1,10 +1,13 @@
 package models
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"net/mail"
 	"strings"
@@ -210,6 +213,59 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 	}
 	// Attach the files
 	for _, a := range c.Template.Attachments {
+		// If it's a docx try to replace the HONEYDROP_TOKEN_URL
+		// To enable tracking of opened Word Documents
+		// This is adapted from the work from Thinkst and Canarytokens
+		// Copyright (c) 2015, Thinkst Applied Research
+		// Licensed under BSD
+		// See https://git.io/fjN0t (Licence)
+		// and https://git.io/fjN0q (Source)
+		if strings.HasSuffix(a.Name, "docx") {
+			decodedBytes, _ := base64.StdEncoding.DecodeString(a.Content)
+
+			readerAt := bytes.NewReader(decodedBytes)
+
+			zipReader, err := zip.NewReader(readerAt, readerAt.Size())
+			if err != nil {
+				panic(err)
+			}
+
+			newFile := new(bytes.Buffer)
+
+			oldWord := "HONEYDROP_TOKEN_URL"
+			newWord := c.getBaseURL() + "?rid=" + r.RId
+
+			zipWriter := zip.NewWriter(newFile)
+			for _, file := range zipReader.File {
+
+				writer, err := zipWriter.Create(file.Name)
+				if err != nil {
+					panic(err)
+				}
+
+				fmt.Println("reading file", file.Name)
+
+				readCloser, err := file.Open()
+				if err != nil {
+					panic(err)
+				}
+				var buf bytes.Buffer
+				buf.ReadFrom(readCloser)
+
+				newContent := strings.Replace(string(buf.Bytes()), oldWord, newWord, -1)
+				writer.Write([]byte(newContent))
+			}
+			zipWriter.Flush()
+			zipWriter.Close()
+
+			encodedDoc := new(bytes.Buffer)
+			encoder := base64.NewEncoder(base64.StdEncoding, encodedDoc)
+			mydoc, _ := ioutil.ReadAll(newFile)
+			encoder.Write(mydoc)
+			encoder.Close()
+
+			a.Content = encodedDoc.String()
+		}
 		msg.Attach(func(a Attachment) (string, gomail.FileSetting, gomail.FileSetting) {
 			h := map[string][]string{"Content-ID": {fmt.Sprintf("<%s>", a.Name)}}
 			return a.Name, gomail.SetCopyFunc(func(w io.Writer) error {
