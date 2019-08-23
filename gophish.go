@@ -31,9 +31,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
-
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/gophish/gophish/auth"
@@ -44,6 +43,7 @@ import (
 	"github.com/gophish/gophish/models"
 	"github.com/gophish/gophish/util"
 	"github.com/gorilla/handlers"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
@@ -120,18 +120,31 @@ func main() {
 			log.Info(http.ListenAndServe(config.Conf.AdminConf.ListenURL, handlers.CombinedLoggingHandler(os.Stdout, adminHandler)))
 		}
 	}()
-	wg.Add(1)
+	if config.Conf.PhishConf.UseTLS { // use TLS for Phish web server if available
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			phishHandler := gziphandler.GzipHandler(controllers.CreatePhishingRouter())
+			log.Infof("Starting TLS phishing server at https://%s", config.Conf.PhishConf.ListenURL+":"+strconv.Itoa(config.Conf.PhishConf.TLSPort))
+			log.Info(http.ListenAndServeTLS(config.Conf.PhishConf.ListenURL+":"+strconv.Itoa(config.Conf.PhishConf.TLSPort), config.Conf.PhishConf.CertPath, config.Conf.PhishConf.KeyPath,
+				handlers.CombinedLoggingHandler(log.Writer(), phishHandler)))
+		}()
+	}
+	if config.Conf.PhishConf.ListenPlain || !config.Conf.PhishConf.UseTLS { // if plain was requested start that ALSO
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			phishHandler := gziphandler.GzipHandler(controllers.CreatePhishingRouter())
+			log.Infof("Starting HTTP phishing server at http://%s", config.Conf.PhishConf.ListenURL+":"+strconv.Itoa(config.Conf.PhishConf.PlainPort))
+			log.Info(http.ListenAndServe(config.Conf.PhishConf.ListenURL+":"+strconv.Itoa(config.Conf.PhishConf.PlainPort), handlers.CombinedLoggingHandler(os.Stdout, phishHandler)))
+		}()
+	}
+	/*wg.Add(1)
 	go func() {
 		defer wg.Done()
 		phishHandler := gziphandler.GzipHandler(controllers.CreatePhishingRouter())
-		if config.Conf.PhishConf.UseTLS { // use TLS for Phish web server if available
-			log.Infof("Starting phishing server at https://%s", config.Conf.PhishConf.ListenURL)
-			log.Info(http.ListenAndServeTLS(config.Conf.PhishConf.ListenURL, config.Conf.PhishConf.CertPath, config.Conf.PhishConf.KeyPath,
-				handlers.CombinedLoggingHandler(log.Writer(), phishHandler)))
-		} else {
-			log.Infof("Starting phishing server at http://%s", config.Conf.PhishConf.ListenURL)
-			log.Fatal(http.ListenAndServe(config.Conf.PhishConf.ListenURL, handlers.CombinedLoggingHandler(os.Stdout, phishHandler)))
-		}
-	}()
+		log.Infof("Starting phishing server at http://%s", "0.0.0.0:80")
+		log.Fatal(http.ListenAndServe("0.0.0.0:80", handlers.CombinedLoggingHandler(os.Stdout, phishHandler)))
+	}()*/
 	wg.Wait()
 }
