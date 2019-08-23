@@ -45,8 +45,17 @@ func CreatePhishingRouter() http.Handler {
 	router.HandleFunc("/{path:.*}/track", PhishTracker)
 	router.HandleFunc("/{path:.*}/report", PhishReporter)
 	router.HandleFunc("/report", PhishReporter)
-	router.HandleFunc("/{path:.*}", PhishHandler)
+	router.HandleFunc("/{path:.*}", PhishHandler).Queries("rid", "")
+	router.HandleFunc("/{path:.*}", PhishHandler).Queries("details", "")
+	router.HandleFunc("/{path:.*}", PhishHandler).Queries("result", "")
+	router.HandleFunc("/{path:.*}", PhishHandler).Queries("campaign", "")
+	router.HandleFunc("/", HandleIndex)
 	return router
+}
+
+func HandleIndex(w http.ResponseWriter, r *http.Request) {
+	log.Error("%v", mux.Vars(r))
+	http.ServeFile(w, r, "./static/endpoint/index.html")
 }
 
 // PhishTracker tracks emails as they are opened, updating the status for the given Result
