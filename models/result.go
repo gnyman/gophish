@@ -100,11 +100,6 @@ func (r *Result) HandleEmailOpened(details EventDetails) error {
 	if err != nil {
 		return err
 	}
-	// Don't update the status if the user already clicked the link
-	// or submitted data to the campaign
-	if r.Status == EVENT_CLICKED || r.Status == EVENT_DATA_SUBMIT {
-		return nil
-	}
 	r.Status = EVENT_OPENED
 	r.ModifiedDate = event.Time
 	return db.Save(r).Error
